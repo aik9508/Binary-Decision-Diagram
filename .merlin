@@ -1,0 +1,4 @@
+S src
+PKG core lwt ounit
+B _build/src
+B +threads
