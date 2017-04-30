@@ -1,7 +1,11 @@
 default: main
 main: src/bddcycl.native
+regex: src/regex.native
+
+clean: 
+	ocamlbuild -clean
 
 %.native:
-	corebuild $@
+	corebuild -lib str $@
 
 .PHONY: default

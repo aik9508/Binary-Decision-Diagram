@@ -53,12 +53,23 @@ struct
       if BaFp.is_fp_true f_p then T else if BaFp.is_fp_false f_p then F else
         begin
           match var_list with
-          |[] -> if BaFp.is_fp_true f_p then T else if BaFp.is_fp_false f_p then F else raise Unmatched_arguments
+          |[] -> 
+            if BaFp.is_fp_true f_p then 
+              T 
+            else if BaFp.is_fp_false f_p then 
+              F 
+            else 
+              (print_string (BaFp.string_of_fp f_p); 
+               raise Unmatched_arguments)
           | hd :: tl -> 
             begin
               let var_pos = BaFp.get_var_position f_p hd in
+              print_string (Elt.convert_to_string (BaFp.get_name hd));
               if BaFp.bool_of_tree var_pos then
-                let leftNode = aux (BaFp.partial_eval f_p (BaFp.var_false hd) var_pos) tl in
+                let leftFp = BaFp.partial_eval f_p (BaFp.var_false hd) var_pos in
+                print_string (BaFp.string_of_fp leftFp);
+                print_string "\n";
+                let leftNode = aux leftFp tl in
                 let rightNode = aux (BaFp.partial_eval f_p (BaFp.var_true hd) var_pos) tl in
                 Node (leftNode , BaFp.get_name hd, rightNode)
               else
@@ -122,15 +133,19 @@ module Str_bddAcycl = Make_bddAcycl(ConvertStr)
 
 open Str_bddAcycl.BaFp
 
-let p = {name="p";value=true};;
-let q = {name="q";value=false};;
-let r = {name="r";value=true};;
-let s = {name="s";value=true};;
+let str1 = "~(a=>b)"
+let str2 = "((a&&a&&(a&&(a||~~~~~~a))))"
+let str3 = "a&&b||(c=>(d<=>e))&&(~f||~g)&&(a=>b)||h<=>i&&j"
 
-let fp1 = Comp ((Comp(V p, C_imp, V q)),C_or,(Comp (V r,C_and, V s)));;
-let fp2 = Comp (V p, C_and, V q);;
+let (fp1,var_list) = fp_of_string str2
 
-let var_list = [p;q;r;s];;
+let f_v = List.nth_exn  var_list 0
+
+let t1 = get_var_position fp1 f_v
+
+let fp2 = partial_eval fp1 {f_v with value=false} t1
+
+let n1 = Str_bddAcycl.get_graph fp2 (List.tl_exn var_list);;
 
 let n = Str_bddAcycl.get_graph fp1 var_list;;
 
