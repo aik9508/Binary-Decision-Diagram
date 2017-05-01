@@ -11,10 +11,12 @@ module type FormulePropositionnelle =
 sig
   type t 
   type variable = { name : t; value : bool; }
-  val var_false : variable->variable
-  val var_true : variable -> variable
+  val var_false : variable -> variable
+  val var_true : variable  -> variable
   val get_value : variable -> bool
-  val get_name : variable -> t
+  val get_name : variable  -> t
+  val create_var_true : t -> variable
+  val create_var_false : t -> variable
   type fp =
     |V of variable 
     |T
@@ -22,13 +24,21 @@ sig
     |Not of fp
     |Comp of fp * connector * fp
   and connector = C_and |C_or |C_imp |C_equi
+  val fp_true : unit -> fp 
+  val fp_false : unit -> fp
+  val fp_variable : variable-> fp
+  val fp_and : fp -> fp -> fp
+  val fp_or : fp -> fp -> fp
+  val fp_not : fp -> fp
   val is_fp_true : fp -> bool
   val is_fp_false : fp -> bool
   val string_of_fp : fp -> string
   type tree = TT | TF | TN of tree * tree
   val bool_of_tree : tree->bool
-  val get_var_position : fp -> variable -> tree
+  val get_var_position : fp -> variable-> tree
   val partial_eval : fp -> variable -> tree -> fp
+  val partial_eval_i : fp -> variable list -> int -> bool -> fp
+  val partial_eval_l : fp -> variable list -> int list -> bool list -> fp
   val fval : fp -> fp
   val remove_not : string -> string
   val var_filter :  string->bool
@@ -52,15 +62,25 @@ struct
   let get_value v = v.value
 
   let get_name v= v.name
+
+  let create_var_true name = {name=name ; value=true}
+
+  let create_var_false name = {name=name ; value=false}
+
   type fp =
-    |V of variable 
+    |V of variable
     |T
     |F
     |Not of fp
     |Comp of fp * connector * fp
   and connector = C_and |C_or |C_imp |C_equi
 
-  let fp_not f_p = if f_p = T then F else if f_p = F then T else Not f_p
+  let fp_not f_p = 
+    match f_p with
+    | T -> F 
+    | F -> T
+    | Not fp1 -> fp1
+    | _ -> Not f_p
 
   type tree = TT | TF | TN of tree * tree
 
@@ -82,6 +102,47 @@ struct
 
   let is_fp_false f_p = f_p = F
 
+  let fp_true () = T
+
+  let fp_false () = F
+
+  let fp_variable v = V v
+
+  let rec connect (c:connector) (a:fp) (b:fp) =
+    match c with
+    |C_and -> 
+      begin
+        match (a,b) with
+        |(T,b)->b
+        |(a,T)->a
+        |(F,_)->F
+        |(_,F)->F
+        |(V a',Not(V b'))-> if a'.name = b'.name then F else Comp (a,C_and,b)
+        |(Not (V a'), V b') -> if a'.name = b'.name then F else Comp (a,C_and,b)
+        |(V a',V b')-> if a'.name = b'.name then a else Comp(a, C_and,b)
+        |(Not (V a'), Not (V b')) -> if a'.name = b'.name  then a else Comp(a,C_and,b)
+        | _ -> Comp(a, C_and, b)
+      end
+    |C_or ->  
+      begin
+        match (a,b) with
+        |(F,b) -> b
+        |(a,F) -> a
+        |(T,_) -> T
+        |(_,T) -> T
+        |(V a',Not(V b'))-> if a'.name = b'.name then T else Comp (a,C_or,b)
+        |(Not (V a'), V b') -> if a'.name = b'.name then T else Comp (a,C_or,b)
+        |(V a',V b')-> if a'.name = b'.name then a else Comp(a, C_or,b)
+        |(Not (V a'), Not (V b')) -> if a'.name = b'.name  then a else Comp(a,C_or,b)
+        |_ -> Comp (a,C_or ,b)
+      end
+    |C_imp -> connect C_or (fp_not a) b 
+    |C_equi -> connect C_and (connect C_imp a b) (connect C_imp b a )
+
+  let fp_and fp1 fp2 = connect C_and fp1 fp2
+
+  let fp_or fp1 fp2 = connect C_or fp1 fp2
+
   let string_of_connector = function
     |C_equi -> "<=>"
     |C_imp -> "=>"
@@ -96,37 +157,6 @@ struct
     |Not f_p -> "(~"^string_of_fp f_p^")" 
     |Comp (fp1,c,fp2) -> "("^string_of_fp fp1^string_of_connector c^string_of_fp fp2^")"
 
-  let rec connect (c:connector) (a:fp) (b:fp) =
-    match c with
-    |C_and -> 
-      begin
-        match (a,b) with
-        |(T,b)->b
-        |(a,T)->a
-        |(F,_)->F
-        |(_,F)->F
-        |(V a',Not(V b'))-> if a'.name=b'.name then F else Comp (a,C_and,b)
-        |(Not (V a'), V b') -> if a'.name =b'.name then F else Comp (a,C_and,b)
-        |(V a',V b')-> if a'.name = b'.name then a else Comp(a, C_and,b)
-        |(Not (V a'), Not (V b')) -> if a'.name =b'.name  then a else Comp(a,C_and,b)
-        | _ -> Comp(a, C_and, b)
-      end
-    |C_or ->  
-      begin
-        match (a,b) with
-        |(F,b) -> b
-        |(a,F) -> a
-        |(T,_) -> T
-        |(_,T) -> T
-        |(V a',Not(V b'))-> if a'.name=b'.name then T else Comp (a,C_or,b)
-        |(Not (V a'), V b') -> if a'.name =b'.name then T else Comp (a,C_or,b)
-        |(V a',V b')-> if a'.name = b'.name then a else Comp(a, C_or,b)
-        |(Not (V a'), Not (V b')) -> if a'.name =b'.name  then a else Comp(a,C_or,b)
-        |_ -> Comp (a,C_or ,b)
-      end
-    |C_imp -> connect C_or (fp_not a) b 
-    |C_equi -> connect C_and (connect C_imp a b) (connect C_imp b a )
-
   let partial_eval (f_p:fp) (v_to_eval:variable) (var_pos:tree) : fp =
     let rec aux = function
       |(TT,V _) -> if v_to_eval.value then T else F
@@ -135,6 +165,14 @@ struct
       |(TN (t1,t2) , Comp (fp1,c,fp2)) -> connect c (aux (t1,fp1)) (aux (t2,fp2))
       |(_,f_p) -> f_p
     in aux (var_pos,f_p)
+
+  let partial_eval_i (f_p:fp) (var_list:variable list) (i:int) (b:bool)=
+    let v_to_eval = List.nth_exn var_list i in
+    let var_pos=get_var_position f_p v_to_eval in
+    partial_eval f_p {v_to_eval with value=b} var_pos 
+
+  let partial_eval_l (f_p:fp) (var_list:variable list) (l:int list) (bl:bool list) =
+    List.fold2_exn l bl ~init:f_p ~f:(fun f_p i b -> partial_eval_i f_p var_list i b) 
 
   let rec fval f_p = 
     match f_p with
@@ -198,13 +236,7 @@ struct
   let add_variable var_set v_name= 
     match Hashtbl.find var_set v_name with
     |None ->
-      print_string "before : var_set : ";
-      print_int (Hashtbl.length var_set);
-      print_string "\n";
       Hashtbl.add_exn var_set ~key:v_name ~data:({name=(Elt.convert_to_t v_name); value=false});
-      print_string "after : var_set : ";
-      print_int (Hashtbl.length var_set);
-      print_string "\n"
     |_->()
 
   let update_variable s var_set = List.iter ~f:(add_variable var_set) (get_all_v_names s)
@@ -230,7 +262,7 @@ struct
 
   let fp_of_string_ s var_set higher_order_var_set=
     let rec aux s =
-      print_string ("fragment: "^s^"\n");
+      (*print_string ("fragment: "^s^"\n");*)
       let l = logic_separate s in
       if List.length l = 1 then single_fp_of_string s else
         Comp (aux (List.nth_exn l 1), connector_of_string (List.nth_exn l 0) ,aux (List.nth_exn l 2))
@@ -257,12 +289,6 @@ struct
     List.iteri ~f:(fun i s -> 
         update_variable s var_set;
         result:=fp_of_string_ s var_set higher_order_var_set;
-        print_string "before : higher_order: ";
-        print_int (Hashtbl.length higher_order_var_set);
-        print_string "\n";
-        Hashtbl.add_exn higher_order_var_set ~key:("["^string_of_int i^"]") ~data:!result;
-        print_string "after : higher_order: ";
-        print_int (Hashtbl.length higher_order_var_set);
-        print_string "\n");
+        Hashtbl.add_exn higher_order_var_set ~key:("["^string_of_int i^"]") ~data:!result);
     (!result , (Hashtbl.data var_set))
 end

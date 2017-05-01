@@ -59,16 +59,16 @@ struct
             else if BaFp.is_fp_false f_p then 
               F 
             else 
-              (print_string (BaFp.string_of_fp f_p); 
-               raise Unmatched_arguments)
+              (*(print_string (BaFp.string_of_fp f_p); *)
+              raise Unmatched_arguments
           | hd :: tl -> 
             begin
               let var_pos = BaFp.get_var_position f_p hd in
-              print_string (Elt.convert_to_string (BaFp.get_name hd));
+              (*print_string (Elt.convert_to_string (BaFp.get_name hd));*)
               if BaFp.bool_of_tree var_pos then
                 let leftFp = BaFp.partial_eval f_p (BaFp.var_false hd) var_pos in
-                print_string (BaFp.string_of_fp leftFp);
-                print_string "\n";
+                (*print_string (BaFp.string_of_fp leftFp);
+                  print_string "\n";*)
                 let leftNode = aux leftFp tl in
                 let rightNode = aux (BaFp.partial_eval f_p (BaFp.var_true hd) var_pos) tl in
                 Node (leftNode , BaFp.get_name hd, rightNode)
@@ -97,10 +97,21 @@ struct
         let s = string_of_data_piece data_p in
         if not(Hashtbl.mem hmp s) then 
           begin
-            Hashtbl.add_exn hmp ~key:s ~data:!current_index;
-            l := data_p :: !l;
-            current_index:=!current_index+1;
-            I (!current_index - 1)
+            let str_left_index = string_of_index leftIndex in
+            let str_right_index = string_of_index rightIndex in
+            if str_left_index = str_right_index && str_left_index<>"@t" && str_left_index <> "@f" then
+              begin
+                let ind = int_of_string str_left_index in
+                Hashtbl.add_exn hmp ~key:s ~data:ind;
+                leftIndex
+              end
+            else
+              begin
+                Hashtbl.add_exn hmp ~key:s ~data:!current_index;
+                l := data_p :: !l;
+                current_index:=!current_index+1;
+                I (!current_index - 1)
+              end
           end
         else let ind = Hashtbl.find_exn hmp s in I ind
     in match aux g with 
@@ -119,6 +130,14 @@ struct
         |> String.concat ~sep:"\n"
       end
 
+  let number_of_solution g height =
+    let rec aux n i =
+      match n with 
+      |T -> 1 lsl (height-i)
+      |F -> 0 
+      |Node (leftNode,_,rightNode) -> (aux leftNode (i+1)) + (aux rightNode (i+1)) 
+    in aux g 0
+
   let rec print_node n =
     match n with
     | T -> print_string "T"
@@ -129,26 +148,27 @@ struct
       print_node rightNode
 end
 
-module Str_bddAcycl = Make_bddAcycl(ConvertStr)
+(*module Str_bddAcycl = Make_bddAcycl(ConvertStr)
 
-open Str_bddAcycl.BaFp
+  open Str_bddAcycl.BaFp
 
-let str1 = "~(a=>b)"
-let str2 = "((a&&a&&(a&&(a||~~~~~~a))))"
-let str3 = "a&&b||(c=>(d<=>e))&&(~f||~g)&&(a=>b)||h<=>i&&j"
+  let str1 = "~(a=>b)"
+  let str2 = "((a&&a&&(a&&(a||~~~~~~a))))"
+  let str3 = "a&&b||(c=>(d<=>e))&&(~f||~g)&&(a=>b)||h<=>i&&j"
+  let str4 = "a&&b&&c||a&&c&&b||b&&a&&c||b&&c&&a||c&&a&&b||c&&b&&a"
 
-let (fp1,var_list) = fp_of_string str2
+  let (fp1,var_list) = fp_of_string str4
 
-let f_v = List.nth_exn  var_list 0
+  let f_v = List.nth_exn  var_list 0
 
-let t1 = get_var_position fp1 f_v
+  let t1 = get_var_position fp1 f_v
 
-let fp2 = partial_eval fp1 {f_v with value=false} t1
+  let fp2 = partial_eval fp1 {f_v with value=false} t1
 
-let n1 = Str_bddAcycl.get_graph fp2 (List.tl_exn var_list);;
+  let n1 = Str_bddAcycl.get_graph fp2 (List.tl_exn var_list);;
 
-let n = Str_bddAcycl.get_graph fp1 var_list;;
+  let n = Str_bddAcycl.get_graph fp1 var_list;;
 
-Str_bddAcycl.print_node n;;
-print_string "\n";;
-print_endline (Str_bddAcycl.reduce_graph n);;
+  Str_bddAcycl.print_node n;;
+  print_string "\n";;
+  print_endline (Str_bddAcycl.reduce_graph printn);;*)
