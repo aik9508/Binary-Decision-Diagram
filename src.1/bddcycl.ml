@@ -1,12 +1,11 @@
 open Fp
+open Core.Std
 
 module ConvertStr:(LabelType with type t = string)=
 struct
   type t = string
   let convert_to_string s = s
   let convert_to_t s = s
-  let hash x = Hashtbl.hash x
-  let equal x y = x = y
 end
 
 
@@ -17,46 +16,36 @@ struct
   type fp = BaFp.fp
   type variable = BaFp.variable
   type node =T|F|Node of node * t * node
+  type index = I of int| DT| DF
+  type data_piece = {
+    label: t;
+    next_true: index;
+    next_false: index;
+  }
+  exception Incorrect_data_format
+  let is_int s =
+    try ignore (int_of_string s); true
+    with _ -> false
 
-  module Index = struct
-    type t = I of int | DT | DF
-    let hash x = match x with I i -> Hashtbl.hash i | DT -> -1 | DF -> -3
-    let equal x y = match x,y with (DT,DT)|(DF,DF) -> true | (I i1, I i2)-> i1=i2 | _ ->false 
-    let index_true() = DT
-    let index_false()  = DF
-    let isTure x = x = DT
-    let isFalse x = x = DF
-    let to_string x = match x with I i -> string_of_int i| DT -> "@t"| DF -> "@f"
-    let to_index s = match s with "@t" -> DT | "@f"-> DF | s -> I (int_of_string s)
-    let to_int x = match x with I i -> i | DT -> -1 | DF -> -3
-    let index i = I i
-  end
-  type index = Index.t
+  let index_of_string s = 
+    match s with 
+    |"@t" -> DT
+    |"@f" -> DF
+    |s -> if is_int s then I (int_of_string s) else raise  Incorrect_data_format
 
-  module Standard_data = 
-  struct
-    type t =  {
-      label: Elt.t;
-      nt: index;
-      nf: index;
-    }
-    let hash x = 13 * (Elt.hash x.label) + 31*(Index.hash x.nt) + 97 * (Index.hash x.nf)
-    let equal x y = (Elt.equal x.label y.label) && Index.equal x.nt y.nt && Index.equal x.nf y.nf
-    let next_ture x= x.nt
-    let next_false x = x.nf
-    let label x = x.label
-    let to_string x = String.concat " " [Elt.convert_to_string x.label; Index.to_string x.nt ; Index.to_string x.nf]
-    let to_std_data s = 
-      let l = String.split_on_char ' ' s in
-      match l with
-      | [label;nt;nf] -> {label=Elt.convert_to_t label; nt = Index.to_index nt ; nf= Index.to_index nf}
-      | _ -> raise (Invalid_argument "Invalid input format")
-    let std_data label nt nf = {label;nt;nf}
-  end
-  type data_piece = Standard_data.t
+  let string_of_index ind =
+    match ind with
+    | DT -> "@t"
+    | DF -> "@f"
+    | I i -> string_of_int i
 
-  module Ht = Hashtbl.Make(Standard_data)
+  let string_of_data_piece dp =
+    Elt.convert_to_string dp.label ^ " " 
+    ^ string_of_index dp.next_true ^ " " 
+    ^ string_of_index dp.next_false 
+
   exception Unmatched_arguments
+
   let get_graph (f_p:fp) (var_list:variable list) =
     let rec aux f_p var_list =
       if BaFp.is_fp_true f_p then T else if BaFp.is_fp_false f_p then F else
@@ -69,8 +58,11 @@ struct
           | hd :: tl -> 
             begin
               let var_pos = BaFp.get_var_position f_p hd in
+              (*print_string (Elt.convert_to_string (BaFp.get_name hd));*)
               if BaFp.bool_of_tree var_pos then
                 let leftFp = BaFp.partial_eval f_p (BaFp.var_false hd) var_pos in
+                (*print_string (BaFp.string_of_fp leftFp);
+                  print_string "\n";*)
                 let leftNode = aux leftFp tl in
                 let rightNode = aux (BaFp.partial_eval f_p (BaFp.var_true hd) var_pos) tl in
                 Node (leftNode , BaFp.get_name hd, rightNode)
@@ -86,46 +78,50 @@ struct
     |Node (leftNode,_,rightNode) -> (max (size_of_node leftNode) (size_of_node rightNode)) + 1 
 
   let reduce_graph g =
-    let hmp = Ht.create ((size_of_node g)*2) in
+    let hmp = String.Table.create() ~size:(size_of_node g) in
     let l = ref [] in
     let current_index = ref 0 in
     let rec aux = function
-      | T -> Index.index_true()
-      | F -> Index.index_false()
+      | T -> DT
+      | F -> DF
       | Node (leftNode,v,rightNode) -> 
         let leftIndex = aux leftNode in
         let rightIndex = aux rightNode in 
-        let data_p = Standard_data.std_data v leftIndex rightIndex in
-        if not(Ht.mem hmp data_p) then 
+        let data_p = {label=v; next_true = rightIndex; next_false = leftIndex} in
+        let s = string_of_data_piece data_p in
+        if not(Hashtbl.mem hmp s) then 
           begin
-            if Index.equal leftIndex rightIndex && not (Index.isTure leftIndex) && not (Index.isFalse leftIndex) then
+            let str_left_index = string_of_index leftIndex in
+            let str_right_index = string_of_index rightIndex in
+            if str_left_index = str_right_index && str_left_index<>"@t" && str_left_index <> "@f" then
               begin
-                Ht.add hmp data_p (Index.to_int leftIndex);
+                let ind = int_of_string str_left_index in
+                Hashtbl.add_exn hmp ~key:s ~data:ind;
                 leftIndex
               end
             else
               begin
-                Ht.add hmp data_p !current_index;
+                Hashtbl.add_exn hmp ~key:s ~data:!current_index;
                 l := data_p :: !l;
                 current_index:=!current_index+1;
-                Index.index (!current_index - 1)
+                I (!current_index - 1)
               end
           end
-        else Index.index (Ht.find hmp data_p) 
-    in let r = aux g in
-    if Index.isTure r || Index.isFalse r then "" else
+        else let ind = Hashtbl.find_exn hmp s in I ind
+    in match aux g with 
+    | DT|DF -> ""
+    |_->
       begin
         let max_index = !current_index - 1 in
-        let change_index ind = if Index.isTure ind || Index.isFalse ind then ind else Index.index (max_index - Index.to_int ind) in
-        let change_data_piece data_p = 
-          Standard_data.std_data 
-            (Standard_data.label data_p) 
-            (change_index (Standard_data.next_ture data_p))
-            (change_index (Standard_data.next_false data_p))
+        let change_index = function
+          | I i -> I (max_index-i)
+          | a -> a in
+        let change_data_piece = 
+          fun data_p -> {data_p with next_true = (change_index data_p.next_true) ; next_false = (change_index data_p.next_false)} 
         in 
-        String.concat "\n" (
-          List.mapi (fun i data_p -> (string_of_int i) ^ " " ^ Standard_data.to_string (change_data_piece data_p)) !l
-        )
+        !l
+        |> List.mapi ~f:(fun i data_p -> (string_of_int i)^" "^string_of_data_piece (change_data_piece data_p))
+        |> String.concat ~sep:"\n"
       end
 
   let number_of_solution g height =

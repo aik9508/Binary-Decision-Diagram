@@ -1,30 +1,29 @@
-module CS = Core.Std 
-
-module type Hashable = sig
-  type t
-  val hash : t -> int
-  val equal : t -> t -> bool
-end
+open Core.Std
 
 module type LabelType =
 sig
   type t
   val convert_to_string : t->string
   val convert_to_t : string -> t
-  include Hashable with type t := t
 end
 
 module type FormulePropositionnelle =
 sig
   type t 
-  type variable
+  type variable = { name : t; value : bool; }
   val var_false : variable -> variable
   val var_true : variable  -> variable
   val get_value : variable -> bool
   val get_name : variable  -> t
   val create_var_true : t -> variable
   val create_var_false : t -> variable
-  type fp
+  type fp =
+    |V of variable 
+    |T
+    |F
+    |Not of fp
+    |Comp of fp * connector * fp
+  and connector = C_and |C_or |C_imp |C_equi
   val fp_true : unit -> fp 
   val fp_false : unit -> fp
   val fp_variable : variable-> fp
@@ -34,17 +33,23 @@ sig
   val is_fp_true : fp -> bool
   val is_fp_false : fp -> bool
   val string_of_fp : fp -> string
-  type tree 
+  type tree = TT | TF | TN of tree * tree
   val bool_of_tree : tree->bool
   val get_var_position : fp -> variable-> tree
   val partial_eval : fp -> variable -> tree -> fp
   val partial_eval_i : fp -> variable list -> int -> bool -> fp
   val partial_eval_l : fp -> variable list -> int list -> bool list -> fp
   val fval : fp -> fp
+  val remove_not : string -> string
+  val var_filter :  string->bool
+  val get_all_v_names : string -> string list
+  val logic_separate : string -> string list
+  val connector_of_string : string->connector
   val fp_of_string : string -> fp * variable list
+  val rm_parenthesis : string -> string list
 end
 
-module Make_Fp(Elt: LabelType) :(FormulePropositionnelle with type t=Elt.t) =
+module Make_Fp(Elt: LabelType):(FormulePropositionnelle with type t=Elt.t)=
 struct
   type t= Elt.t
 
@@ -162,12 +167,12 @@ struct
     in aux (var_pos,f_p)
 
   let partial_eval_i (f_p:fp) (var_list:variable list) (i:int) (b:bool)=
-    let v_to_eval = List.nth var_list i in
+    let v_to_eval = List.nth_exn var_list i in
     let var_pos=get_var_position f_p v_to_eval in
-    partial_eval f_p {v_to_eval with value = b} var_pos 
+    partial_eval f_p {v_to_eval with value=b} var_pos 
 
   let partial_eval_l (f_p:fp) (var_list:variable list) (l:int list) (bl:bool list) =
-    List.fold_left2 (fun f_p i b -> partial_eval_i f_p var_list i b) f_p  l bl 
+    List.fold2_exn l bl ~init:f_p ~f:(fun f_p i b -> partial_eval_i f_p var_list i b) 
 
   let rec fval f_p = 
     match f_p with
@@ -191,6 +196,7 @@ struct
             let substr_with_parenthesis = Str.matched_string str_fp in
             let r_substr = Str.regexp_string substr_with_parenthesis in
             current_str_fp := Str.global_replace r_substr ("["^string_of_int !temporal_variable_name^"]") !current_str_fp;
+            (*print_string !current_str_fp;*)
             temporal_variable_name:=!temporal_variable_name +1 ;
             reduce substr_without_parenthesis ;
             aux !current_str_fp
@@ -204,8 +210,10 @@ struct
   let c_reg_list = ["<=>";"=>";"\\|\\|";"&&"]
   let c_reg_list_2 = ["<=>";"=>";"[\\|]+";"&&"]
 
+  (*let c_list = [C_equi;C_imp;C_or;C_and]*)
+
   let remove_not s =
-    if String.get s 0 ='~' then String.sub s 1 (String.length s - 1)  else s
+    if String.get s 0 ='~' then String.sub s ~pos:1 ~len:(String.length s - 1)  else s
 
   let var_filter s = String.get s 0 <> '[' && s <> "true" && s<> "false"
 
@@ -215,22 +223,23 @@ struct
     let separator_reg = 
       Str.regexp ("[" ^
                   (c_reg_list
-                   |> List.map (fun s -> "\\("^s^"\\)") 
-                   |> String.concat "|") ^ "]+") 
+                   |> List.map ~f:(fun s -> "\\("^s^"\\)") 
+                   |> String.concat ~sep:"|") ^ "]+") 
     in
+    let v_list' = 
       s_without_blank
       |> Str.split separator_reg
-      |> List.map remove_not
-      |> CS.List.dedup ~compare:String.compare
-      |> List.filter var_filter  
+      |> List.map ~f:remove_not
+      |> List.dedup ~compare:String.compare in
+    List.filter ~f:var_filter v_list' 
 
   let add_variable var_set v_name= 
-    match CS.Hashtbl.find var_set v_name with
+    match Hashtbl.find var_set v_name with
     |None ->
-      CS.Hashtbl.add_exn var_set ~key:v_name ~data:({name=(Elt.convert_to_t v_name); value=false});
+      Hashtbl.add_exn var_set ~key:v_name ~data:({name=(Elt.convert_to_t v_name); value=false});
     |_->()
 
-  let update_variable s var_set = List.iter (add_variable var_set) (get_all_v_names s)
+  let update_variable s var_set = List.iter ~f:(add_variable var_set) (get_all_v_names s)
 
   let logic_separate s =
     if (s="true" || s="false") then [s] 
@@ -253,9 +262,10 @@ struct
 
   let fp_of_string_ s var_set higher_order_var_set=
     let rec aux s =
+      (*print_string ("fragment: "^s^"\n");*)
       let l = logic_separate s in
       if List.length l = 1 then single_fp_of_string s else
-        Comp (aux (List.nth l 1), connector_of_string (List.nth l 0) ,aux (List.nth l 2))
+        Comp (aux (List.nth_exn l 1), connector_of_string (List.nth_exn l 0) ,aux (List.nth_exn l 2))
     and single_fp_of_string s =
       match s with
       |"true" -> T
@@ -265,20 +275,20 @@ struct
           fp_not (single_fp_of_string (remove_not s))
         else if String.get s 0 = '[' then
           (print_string ("high_order"^s^"\n");
-           CS.Hashtbl.find_exn higher_order_var_set s)
+           Hashtbl.find_exn higher_order_var_set s)
         else
           (print_string ("var_set"^s^"\n") ;
-           V (CS.Hashtbl.find_exn var_set s))
+           V (Hashtbl.find_exn var_set s))
     in aux s
 
   let fp_of_string s = 
-    let var_set = CS.String.Table.create() in
-    let higher_order_var_set = CS.String.Table.create() in
+    let var_set = String.Table.create() in
+    let higher_order_var_set = String.Table.create() in
     let result = ref T in
     rm_parenthesis s |>
-    List.iteri (fun i s -> 
+    List.iteri ~f:(fun i s -> 
         update_variable s var_set;
         result:=fp_of_string_ s var_set higher_order_var_set;
-        CS.Hashtbl.add_exn higher_order_var_set ~key:("["^string_of_int i^"]") ~data:!result);
-    (!result , (CS.Hashtbl.data var_set))
+        Hashtbl.add_exn higher_order_var_set ~key:("["^string_of_int i^"]") ~data:!result);
+    (!result , (Hashtbl.data var_set))
 end

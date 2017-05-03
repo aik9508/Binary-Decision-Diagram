@@ -1,3 +1,5 @@
+CB = corebuild -lib str
+
 default: main
 main: src/bddcycl.native
 regex: src/regex.native
@@ -7,6 +9,10 @@ clean:
 	ocamlbuild -clean
 
 %.native:
-	corebuild -lib str $@
+	$(CB) $@
 
 .PHONY: default
+
+.PHONY: top
+top: main
+	$(CB) src/bddcycl.cma
