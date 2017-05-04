@@ -1,9 +1,9 @@
 CB = corebuild -lib str
 
 default: main
-main: src/bddcycl.native
+main: src/bdd.native
 regex: src/regex.native
-Tetravex: src/Tetravex.native
+tetravex: src/tetravex.native
 
 clean: 
 	ocamlbuild -clean

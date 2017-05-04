@@ -1,18 +1,5 @@
 module CS = Core.Std 
-
-module type Hashable = sig
-  type t
-  val hash : t -> int
-  val equal : t -> t -> bool
-end
-
-module type LabelType =
-sig
-  type t
-  val convert_to_string : t->string
-  val convert_to_t : string -> t
-  include Hashable with type t := t
-end
+open Lt
 
 module type FormulePropositionnelle =
 sig
@@ -264,11 +251,9 @@ struct
         if String.get s 0 = '~' then 
           fp_not (single_fp_of_string (remove_not s))
         else if String.get s 0 = '[' then
-          (print_string ("high_order"^s^"\n");
-           CS.Hashtbl.find_exn higher_order_var_set s)
+           CS.Hashtbl.find_exn higher_order_var_set s
         else
-          (print_string ("var_set"^s^"\n") ;
-           V (CS.Hashtbl.find_exn var_set s))
+           V (CS.Hashtbl.find_exn var_set s)
     in aux s
 
   let fp_of_string s = 
