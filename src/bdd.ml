@@ -24,16 +24,16 @@ struct
     type t = I of int | DT | DF
     let hash x = match x with I i -> Hashtbl.hash i | DT -> -1 | DF -> -3
     let equal x y = match x,y with (DT,DT)|(DF,DF) -> true | (I i1, I i2)-> i1=i2 | _ ->false 
-    let index_true() = DT
-    let index_false()  = DF
-    let isTure x = x = DT
-    let isFalse x = x = DF
     let to_string x = match x with I i -> string_of_int i| DT -> "@t"| DF -> "@f"
     let to_index s = match s with "@t" -> DT | "@f"-> DF | s -> I (int_of_string s)
     let to_int x = match x with I i -> i | DT -> -1 | DF -> -3
-    let index i = I i
   end
   type index = Index.t
+
+  module IndexPair = struct
+    type t = index * index
+    let equal a b = Index.equal (fst a) (fst b) && Index.equal (snd a) (snd b)  
+  end
 
   module Standard_data = 
   struct
@@ -57,7 +57,6 @@ struct
   end
   type data_piece = Standard_data.t
 
-  module Ht = Hashtbl.Make(Standard_data)
   exception Unmatched_arguments
   let get_graph (f_p:fp) (var_list:variable list) =
     let rec aux f_p var_list =
@@ -87,51 +86,97 @@ struct
     |T|F -> 1
     |Node (leftNode,_,rightNode) -> (max (size_of_node leftNode) (size_of_node rightNode)) + 1 
 
-  let reduce_graph g =
-    let hmp = Ht.create ((size_of_node g)*2) in
+  let reduce_graph_ g =
+    let module Ht = Hashtbl.Make(Standard_data) in
+    let data_to_index = Ht.create ((size_of_node g)*2) in
     let l = ref [] in
     let current_index = ref 0 in
     let rec aux = function
-      | T -> Index.index_true()
-      | F -> Index.index_false()
+      | T -> Index.DT
+      | F -> Index.DF
       | Node (leftNode,v,rightNode) -> 
         let leftIndex = aux leftNode in
         let rightIndex = aux rightNode in 
         let data_p = Standard_data.std_data v rightIndex leftIndex in
-        if not(Ht.mem hmp data_p) then 
+        if not(Ht.mem data_to_index data_p) then 
           begin
             if Index.equal leftIndex rightIndex then
-              if (Index.isTure leftIndex) || (Index.isFalse leftIndex) then
-                  leftIndex
+              if (leftIndex = Index.DT) || (leftIndex = Index.DF) then
+                leftIndex
               else
                 begin
-                  Ht.add hmp data_p (Index.to_int leftIndex);
+                  Ht.add data_to_index data_p (Index.to_int leftIndex);
                   leftIndex
                 end
             else
               begin
-                Ht.add hmp data_p !current_index;
+                Ht.add data_to_index data_p !current_index;
                 l := data_p :: !l;
                 current_index:=!current_index+1;
-                Index.index (!current_index - 1)
+                Index.I (!current_index - 1)
               end
           end
-        else Index.index (Ht.find hmp data_p) 
+        else Index.I (Ht.find data_to_index data_p) 
     in let r = aux g in
-    if Index.isTure r || Index.isFalse r then "" else
+    if  r= Index.DT || r=Index.DF then [] else !l
+
+  let change_data_piece data_p max_index= 
+    let change_index ind = if ind=Index.DT || ind=Index.DF  then ind else Index.I (max_index - Index.to_int ind) in
+    Standard_data.std_data 
+      (Standard_data.label data_p) 
+      (change_index (Standard_data.next_ture data_p))
+      (change_index (Standard_data.next_false data_p))
+
+  let reduce_graph g =
+    let l = reduce_graph_ g in
+    match l with
+    |[] -> ""
+    | l ->
       begin
-        let max_index = !current_index - 1 in
-        let change_index ind = if Index.isTure ind || Index.isFalse ind then ind else Index.index (max_index - Index.to_int ind) in
-        let change_data_piece data_p = 
-          Standard_data.std_data 
-            (Standard_data.label data_p) 
-            (change_index (Standard_data.next_ture data_p))
-            (change_index (Standard_data.next_false data_p))
-        in 
+        let max_index = (List.length l) - 1 in 
         String.concat "\n" (
-          List.mapi (fun i data_p -> (string_of_int i) ^ " " ^ Standard_data.to_string (change_data_piece data_p)) !l
+          List.mapi (fun i data_p -> (string_of_int i) ^ " " ^ Standard_data.to_string (change_data_piece data_p max_index)) l
         )
       end
+
+  let factorise f_p var_list=
+    let module Sd = Standard_data in
+    let l = reduce_graph_ (get_graph f_p var_list) in
+    let a = Array.make (List.length l) (List.hd l) in
+    let max_index = (List.length l) - 1 in
+    List.iteri (fun i x -> a.(i) <- (change_data_piece x max_index)) l ;
+    let rec aux data_p = 
+      let v = Fp.fp_variable (Fp.create_var_false (Sd.label data_p)) in
+      let fp_right = get_data_p (Sd.next_ture data_p) in
+      let fp_left = get_data_p (Sd.next_false data_p) in 
+      Fp.fp_or (Fp.fp_and (Fp.fp_not v) fp_left) (Fp.fp_and v fp_right)
+    and get_data_p = function
+      |Index.DT -> Fp.fp_true()
+      |Index.DF -> Fp.fp_false()
+      |Index.I i -> aux a.(i) in
+    match Fp.factorise (aux a.(0)) var_list with
+      (t_list,f_list,r_fp) ->
+      let new_var_list = 
+        let nl = ref [] in
+        for i = 0 to List.length var_list -1 do
+          if not(List.exists (fun x -> x = i) t_list) && not(List.exists (fun x -> x=i) f_list) then
+            nl := !nl @ [List.nth var_list i]
+        done;
+        !nl 
+      in (
+        List.map (List.nth var_list) t_list,
+        List.map (List.nth var_list) f_list,
+        r_fp,new_var_list) 
+
+  let print_factorized_fp = function (t_list,f_list,r_fp,new_var_list) ->      
+    String.concat "\n" [
+      "True variables: ";
+      String.concat " " (List.map (fun x -> Elt.convert_to_string (Fp.get_name x))  t_list);
+      "False varialbes: ";
+      String.concat " " (List.map (fun x -> Elt.convert_to_string (Fp.get_name x))  f_list);
+      "Irreducible propositional expression: ";
+      reduce_graph (get_graph r_fp new_var_list)
+    ]
 
   let number_of_solution g height =
     let rec aux n i =
@@ -178,8 +223,10 @@ struct
   let cons_from_file (file:string) =
     let h = cons_htb_from_file file in
     let rec get_node ind = 
-      if Index.isTure ind then T else if Index.isFalse ind then F
-      else aux (Hashtbl.find h (Index.to_int ind))
+      match ind with
+      | Index.DT -> T
+      | Index.DF -> F
+      | ind -> aux (Hashtbl.find h (Index.to_int ind)) 
     and  aux dp =
       let node_true = get_node (Standard_data.next_ture dp) in
       let node_false = get_node (Standard_data.next_false dp) in
@@ -187,7 +234,7 @@ struct
     in aux (Hashtbl.find h 0)
 end
 
-module Str_bdd = Make_bdd(ConvertStr)
+(*module Str_bdd = Make_bdd(ConvertStr)
 
 open Str_bdd.Fp
 
@@ -195,21 +242,15 @@ let str1 = "~(a=>b)"
 let str2 = "((a&&a&&(a&&(a||~~~~~~a))))"
 let str3 = "a&&b||(c=>(d<=>e))&&(~f||~g)&&(a=>b)||h<=>i&&j"
 let str4 = "a&&b&&c||a&&c&&b||b&&a&&c||b&&c&&a||c&&a&&b||c&&b&&a"
+let str5 = "(a<=>b)&&c&&d&&~e&&(~g&&~f)"
 
-let (fp1,var_list) = fp_of_string str4
-
+let (fp1,var_list) = fp_of_string str5
 let f_v = List.nth  var_list 0
-
 let t1 = get_var_position fp1 f_v
-
-let fp2 = partial_eval fp1 (var_false f_v ) t1
-
-let n1 = Str_bdd.get_graph fp2 (List.tl var_list);;
-
 let n = Str_bdd.get_graph fp1 var_list;;
 
-Str_bdd.print_node n;;
-print_string "\n";;
+(*Str_bdd.print_node n;;
+  print_string "\n";;*)
 print_endline (Str_bdd.reduce_graph n);;
 
-let g=Str_bdd.cons_from_file "data/data.txt";;
+let () = print_endline (Str_bdd.print_factorized_fp (Str_bdd.factorise fp1 var_list))*)

@@ -45,7 +45,7 @@ let make_tetravex(file:string) =
   with End_of_file ->
     raise (BDDException "Invalid input data") 
 
-let ((width,height),pieces) = make_tetravex("data/tetravex.txt")
+let ((width,height),pieces) = make_tetravex("data/tetravex2.txt")
 
 let create_variables () =
   let nil = Fp.create_var_false {i=0;j=0;k=0} in
@@ -149,19 +149,23 @@ let create_fp () =
 let () =
   let n_var = List.length var_list in
   (*List.iter (fun x -> print_endline (Tetravex_label.convert_to_string (Fp.get_name x))) var_list ;*)
-  let f_p = create_fp() in
-  print_endline (Fp.string_of_fp f_p);
-  print_endline "";
-  (*let fp1 = Fp.partial_eval_i f_p var_list 0 true in
+  let f_p = create_fp_one_case_per_piece() in
+  (*print_endline (Fp.string_of_fp f_p);
+    print_endline "";*)
+  (*let fp1 = Fp.partial_eval_i f_p var_list 0 false in
   print_endline (Fp.string_of_fp fp1);
   print_endline "";
-  let fp2 = Fp.partial_eval_i fp1 var_list 1 true in
-  print_endline (Fp.string_of_fp fp2);
   print_endline "";
-  let fp3 = Fp.partial_eval_i fp1 var_list 1 false in
-  print_endline (Fp.string_of_fp fp3);
   print_endline "";*)
+  (*let fp2 = Fp.partial_eval_i fp1 var_list 1 true in
+    print_endline (Fp.string_of_fp fp2);
+    print_endline "";*)
+  (*let fp3 = Fp.partial_eval_i fp1 var_list 1 false in
+    print_endline (Fp.string_of_fp fp3);
+    print_endline "";*)
   let n = get_graph f_p var_list in
   print_int (number_of_solution n n_var);
   print_endline "";
-  print_endline (reduce_graph n)
+  print_endline (reduce_graph n);
+  print_endline (print_factorized_fp (factorise f_p var_list))
+

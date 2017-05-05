@@ -27,6 +27,7 @@ sig
   val partial_eval : fp -> variable -> tree -> fp
   val partial_eval_i : fp -> variable list -> int -> bool -> fp
   val partial_eval_l : fp -> variable list -> int list -> bool list -> fp
+  val factorise : fp -> variable list -> int list * int list * fp
   val fval : fp -> fp
   val fp_of_string : string -> fp * variable list
 end
@@ -156,6 +157,26 @@ struct
   let partial_eval_l (f_p:fp) (var_list:variable list) (l:int list) (bl:bool list) =
     List.fold_left2 (fun f_p i b -> partial_eval_i f_p var_list i b) f_p  l bl 
 
+  let factorise (f_p:fp) (var_list:variable list) = 
+    let rec aux i true_list false_list f_p var_list =
+      match var_list with
+      |[] -> true_list,false_list,f_p 
+      |v :: tl -> let t = get_var_position f_p v in
+        begin
+          let ff = partial_eval f_p {v with value=false} t in
+          let ft = partial_eval f_p {v with value=true} t in
+          if ff = F then
+            aux (i+1) (i::true_list) false_list ft tl 
+          else  
+            begin
+              if ft = F then
+                aux (i+1) true_list (i::false_list) ff tl
+              else
+                aux (i+1) true_list false_list f_p tl
+            end
+        end
+    in aux 0 [] [] f_p var_list
+
   let rec fval f_p = 
     match f_p with
     | V v -> if v.value then T else F
@@ -205,11 +226,11 @@ struct
                    |> List.map (fun s -> "\\("^s^"\\)") 
                    |> String.concat "|") ^ "]+") 
     in
-      s_without_blank
-      |> Str.split separator_reg
-      |> List.map remove_not
-      |> CS.List.dedup ~compare:String.compare
-      |> List.filter var_filter  
+    s_without_blank
+    |> Str.split separator_reg
+    |> List.map remove_not
+    |> CS.List.dedup ~compare:String.compare
+    |> List.filter var_filter  
 
   let add_variable var_set v_name= 
     match CS.Hashtbl.find var_set v_name with
@@ -251,9 +272,9 @@ struct
         if String.get s 0 = '~' then 
           fp_not (single_fp_of_string (remove_not s))
         else if String.get s 0 = '[' then
-           CS.Hashtbl.find_exn higher_order_var_set s
+          CS.Hashtbl.find_exn higher_order_var_set s
         else
-           V (CS.Hashtbl.find_exn var_set s)
+          V (CS.Hashtbl.find_exn var_set s)
     in aux s
 
   let fp_of_string s = 
