@@ -1,18 +1,18 @@
-CB = corebuild -lib str
+CB_FLAGS = -lib str -I src
+CB = corebuild $(CB_FLAGS)
 
-default: main
-main: src/bdd.native
-regex: src/regex.native
-tetravex: src/tetravex.native
+all: lib bdd
+
+native: 
+	$(CB) bdd.native
 
 clean: 
-	ocamlbuild -clean
+	$(CB) -clean
 
-%.native:
-	$(CB) $@
+lib: 
+	$(CB) bdd_API.cma
 
-.PHONY: default
+bdd: native
+	./bdd.native satisfiable "a&&~a"
 
-.PHONY: top
-top: main
-	$(CB) src/bddcycl.cma
+.PHONY: all clean lib native bdd
