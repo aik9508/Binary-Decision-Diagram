@@ -3,7 +3,7 @@ open Bdd_Main
 open Tetravex
 
 module SB = Make_bdd(StrLabel)
-module SF = Make_Fp(StrLabel) 
+module SF = SB.Fp
 
 (*Tetravex*)
 

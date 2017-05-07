@@ -233,10 +233,7 @@ struct
                  (Index.to_index next_true) 
                  (Index.to_index next_false))
             | _ -> raise (BDDException "Incorrect data format") in
-          Hashtbl.add h (fst line_data) (snd line_data);
-          print_int (fst line_data);
-          print_string " ";
-          print_string ((Standard_data.to_string (snd line_data)) ^ "\n")
+          Hashtbl.add h (fst line_data) (snd line_data)
         done
       with End_of_file ->
         close_in_noerr ic
