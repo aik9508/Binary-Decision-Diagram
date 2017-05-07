@@ -152,8 +152,8 @@ let resolve file =
 
   let n_var = List.length var_list in
   let f_p = create_fp() in
-  let n = get_graph f_p var_list in
+  let n = get_graph ~var_list:var_list f_p in
   print_int (number_of_solution n n_var);
   print_endline "";
   print_endline (reduce_graph n);
-  print_endline (print_factorized_fp (factorise ~var_list:var_list f_p))
+  print_factorized_fp (factorise ~var_list:var_list f_p)

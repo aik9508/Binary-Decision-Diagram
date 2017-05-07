@@ -33,7 +33,7 @@ sig
   val is_satisfiable_s : string -> bool
   val is_satisfiable_fp : ? var_list : variable list -> fp -> bool
   val is_valid_s : string -> bool
-  val is_valid_fp : ? var_list : variable list -> fp -> bool
+  val is_valid_fp : ?var_list : variable list -> fp -> bool
   val factorise : ?var_list:variable list -> fp -> int list * int list * fp
   val fval : fp -> fp
   val fp_of_string : string -> fp * variable list

@@ -10,7 +10,26 @@ struct
   let equal x y = x = y
 end
 
-module Make_bdd(Elt:LabelType) =
+module type Bdd_Reducer = sig
+  type t
+  module Fp : FormulePropositionnelle with type t:=t
+  type fp = Fp.fp
+  type variable = Fp.variable
+  type node
+  exception BDDException of string
+  val get_graph : ?var_list: variable list -> fp -> node
+  val reduce_graph : node -> string
+  val factorise : ?var_list:variable list -> fp -> variable list * variable list * fp * variable list
+  val print_factorized_fp : variable list * variable list * fp * variable list -> unit
+  val number_of_solution : node -> int -> int
+  val cons_from_file : string -> node
+  val fp_from_file : string -> fp
+  val fp_of_bdd : node -> fp
+  val dump_s : string -> unit
+  val dump_fp : ?var_list : variable list -> fp -> unit
+end
+
+module Make_bdd(Elt:LabelType) : Bdd_Reducer with type t:=Elt.t =
 struct
   module Fp = Make_Fp(Elt)
   type t = Elt.t
@@ -38,22 +57,22 @@ struct
     }
     let hash x = 13 * (Elt.hash x.label) + 31*(Index.hash x.nt) + 97 * (Index.hash x.nf)
     let equal x y = (Elt.equal x.label y.label) && Index.equal x.nt y.nt && Index.equal x.nf y.nf
-    let next_ture x= x.nt
+    let next_true x= x.nt
     let next_false x = x.nf
     let label x = x.label
     let to_string x = String.concat " " [Elt.convert_to_string x.label; Index.to_string x.nt ; Index.to_string x.nf]
-    let to_std_data s = 
+    (*let to_std_data s = 
       let l = String.split_on_char ' ' s in
       match l with
       | [label;nt;nf] -> {label=Elt.convert_to_t label; nt = Index.to_index nt ; nf= Index.to_index nf}
-      | _ -> raise (BDDException "Invalid input format")
+      | _ -> raise (BDDException "Invalid input format")*)
     let std_data label nt nf = {label;nt;nf}
   end
   type data_piece = Standard_data.t
 
   exception Unmatched_arguments
 
-  let get_graph (f_p:fp) (var_list:variable list) =
+  let get_graph_ (f_p:fp) (var_list:variable list) =
     let rec aux f_p var_list =
       if Fp.is_fp_true f_p then T else if Fp.is_fp_false f_p then F else
         begin
@@ -75,6 +94,10 @@ struct
             end
         end
     in aux f_p var_list
+
+  let get_graph ?(var_list=[]) f_p =
+    if var_list = [] then get_graph_ f_p (Fp.get_all_variables f_p)
+    else get_graph_ f_p var_list
 
   let rec size_of_node n =
     match n with
@@ -119,7 +142,7 @@ struct
     let change_index ind = if ind=Index.DT || ind=Index.DF  then ind else Index.I (max_index - Index.to_int ind) in
     Standard_data.std_data 
       (Standard_data.label data_p) 
-      (change_index (Standard_data.next_ture data_p))
+      (change_index (Standard_data.next_true data_p))
       (change_index (Standard_data.next_false data_p))
 
   let reduce_graph g =
@@ -136,13 +159,13 @@ struct
 
   let factorise_ f_p var_list=
     let module Sd = Standard_data in
-    let l = reduce_graph_ (get_graph f_p var_list) in
+    let l = reduce_graph_ (get_graph_ f_p var_list) in
     let a = Array.make (List.length l) (List.hd l) in
     let max_index = (List.length l) - 1 in
     List.iteri (fun i x -> a.(i) <- (change_data_piece x max_index)) l ;
     let rec aux data_p = 
       let v = Fp.fp_variable (Fp.create_var_false (Sd.label data_p)) in
-      let fp_right = get_data_p (Sd.next_ture data_p) in
+      let fp_right = get_data_p (Sd.next_true data_p) in
       let fp_left = get_data_p (Sd.next_false data_p) in 
       Fp.fp_or (Fp.fp_and (Fp.fp_not v) fp_left) (Fp.fp_and v fp_right)
     and get_data_p = function
@@ -167,15 +190,16 @@ struct
     if var_list = [] then factorise_  f_p (Fp.get_all_variables f_p)
     else factorise_ f_p var_list
 
-  let print_factorized_fp = function (t_list,f_list,r_fp,new_var_list) ->      
-    String.concat "\n" [
-      "True variables: ";
-      String.concat " " (List.map (fun x -> Elt.convert_to_string (Fp.get_name x))  t_list);
-      "False varialbes: ";
-      String.concat " " (List.map (fun x -> Elt.convert_to_string (Fp.get_name x))  f_list);
-      "Irreducible propositional expression: ";
-      reduce_graph (get_graph r_fp new_var_list)
-    ]
+  let print_factorized_fp = function (t_list,f_list,r_fp,new_var_list) ->  
+    print_endline (    
+      String.concat "\n" [
+        "True variables: ";
+        String.concat " " (List.map (fun x -> Elt.convert_to_string (Fp.get_name x))  t_list);
+        "False varialbes: ";
+        String.concat " " (List.map (fun x -> Elt.convert_to_string (Fp.get_name x))  f_list);
+        "Irreducible propositional expression: ";
+        reduce_graph (get_graph_ r_fp new_var_list)
+      ])
 
   let number_of_solution g height =
     let rec aux n i =
@@ -185,14 +209,14 @@ struct
       |Node (leftNode,_,rightNode) -> (aux leftNode (i+1)) + (aux rightNode (i+1)) 
     in aux g 0
 
-  let rec print_node n =
+  (*let rec print_node n =
     match n with
     | T -> print_string "T"
     | F -> print_string "F"
     | Node (leftNode,v_name,rightNode) ->
       print_node leftNode;
       print_string (" "^Elt.convert_to_string v_name^" ");
-      print_node rightNode
+      print_node rightNode*)
 
   let cons_htb_from_file (file:string) =
     let h = Hashtbl.create 10 in
@@ -227,16 +251,38 @@ struct
       | Index.DF -> F
       | ind -> aux (Hashtbl.find h (Index.to_int ind)) 
     and  aux dp =
-      let node_true = get_node (Standard_data.next_ture dp) in
+      let node_true = get_node (Standard_data.next_true dp) in
       let node_false = get_node (Standard_data.next_false dp) in
       Node (node_true , Standard_data.label dp , node_false) 
     in aux (Hashtbl.find h 0)
 
-  let dump_ f_p var_list = print_endline (reduce_graph (get_graph f_p var_list))
+  let fp_from_file file =
+    let h = cons_htb_from_file file in
+    let rec get_fp = function
+      | Index.DT -> Fp.fp_true()
+      | Index.DF -> Fp.fp_false()
+      | ind -> aux (Hashtbl.find h (Index.to_int ind))
+    and aux dp =
+      let fp1 = get_fp (Standard_data.next_true dp) in
+      let fp2 = get_fp (Standard_data.next_false dp) in
+      let var = Fp.fp_variable (Fp.create_var_false (Standard_data.label dp)) in
+      Fp.fp_or (Fp.fp_and var fp1) (Fp.fp_and (Fp.fp_not var) fp2) in
+    aux (Hashtbl.find h 0)
+
+  let fp_of_bdd g =
+    let rec aux = function
+      | T -> Fp.fp_true()
+      | F -> Fp.fp_false()
+      | Node (n1,v,n2) ->
+        let var = Fp.fp_variable (Fp.create_var_false v) in
+        Fp.fp_or (Fp.fp_and var (aux n2)) (Fp.fp_and (Fp.fp_not var) (aux n1)) in
+    aux g
+
+  let dump_ f_p var_list = print_endline (reduce_graph (get_graph_ f_p var_list))
 
   let dump_fp ?(var_list=[]) f_p =
     if var_list = [] then dump_ f_p (Fp.get_all_variables f_p) else
-    dump_ f_p var_list
+      dump_ f_p var_list
 
   let dump_s s = 
     let (f_p,var_list)= Fp.fp_of_string s in dump_ f_p var_list
