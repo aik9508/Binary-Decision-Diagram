@@ -8,7 +8,7 @@ module SF = SB.Fp
 (*Tetravex*)
 
 let tetravex filename =
-  resolve filename
+  solve filename
 
 (*logical operations*)
 
@@ -59,13 +59,15 @@ let dump_fp f_p = SB.dump_fp f_p
 
 let bdd_from_file = SB.cons_from_file
 
-let bdd_of_fp f_p = SB.get_graph f_p
+let bdd_of_fp f_p = SB.bdd_of_fp f_p
 
 let fp_from_file = SB.fp_from_file
 
 let fp_of_bdd = SB.fp_of_bdd 
 
-let string_of_bdd = SB.reduce_graph 
+let string_of_bdd = SB.string_of_bdd
+
+let reduce_bdd = SB.reduce_bdd 
 
 let factorise = SB.factorise
 

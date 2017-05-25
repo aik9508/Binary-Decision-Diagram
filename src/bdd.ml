@@ -3,7 +3,7 @@ open Bdd_Main
 open Tetravex
 
 let tetravex filename =
-  resolve filename
+  solve filename
 
 let dump s =
   let module SB = Make_bdd(StrLabel) in

@@ -37,8 +37,32 @@ let one_true_concat l ind=
   in aux 0 l 
 
 type relative_position = Right|Down
+exception NoSolution
+let create_var_array width height =
+  let nil = Fp.create_var_false {i=0;j=0;k=0} in
+  let a' = Array.make_matrix width height nil in
+  let a = Array.map (Array.map (fun x -> Array.make (width*height) x)) a' in
+  for i = 0 to width-1 do
+    for j = 0 to height-1 do
+      for k = 0 to width*height-1 do
+        a.(i).(j).(k) <- (Fp.create_var_false {i=i;j=j;k=k})
+      done
+    done
+  done;
+  a 
 
-let make_tetravex(file:string) =
+let var_to_list var_array=
+  CS.Array.fold 
+    ~init:[] 
+    ~f:(fun l x -> 
+        l @ (CS.Array.fold 
+               ~init:[] 
+               ~f:(fun l y -> 
+                   l @ (Array.to_list y)) 
+               x)) 
+    var_array 
+
+let make_tetravex (file:string) =
   let ic = open_in file in
   try
     let line = input_line ic in
@@ -52,108 +76,118 @@ let make_tetravex(file:string) =
     for i = 0 to w*h-1 do
       let line = String.split_on_char ' ' (input_line ic) in
       match line with
-      | [top;left;bottom;right] -> pieces.(i)<-{top = int_of_string top;
+      | [top;bottom;left;right] -> pieces.(i)<-{top = int_of_string top;
                                                 left = int_of_string left;
                                                 bottom = int_of_string bottom;
                                                 right = int_of_string right}
       | _ -> raise (BDDException "Invalid input data") 
     done;
-    ((w,h),pieces)
+    let var_array = create_var_array w h in
+    let var_list = var_to_list var_array in
+    let index_list = List.mapi (fun i x -> i+x ) (Array.to_list (Array.make (w*h) 0)) in
+    object (self)
+      val width = w
+      val height = h
+      val pieces = pieces
+      val var_array = var_array
+      val var_list = var_list
+      val index_list = index_list
+
+      method private valid_position k1 k2 rp =
+        match rp with
+        |Right -> pieces.(k1).right = pieces.(k2).left
+        |Down -> pieces.(k1).bottom = pieces.(k2).top 
+
+      method private create_fp_pair i j rp =
+        let res = ref (Fp.fp_false()) in
+        for p = 0 to width*height-1 do
+          for q = 0 to width*height-1 do
+            if p<>q && self#valid_position p q rp then
+              let (i',j')=match rp with Right -> (i+1,j)|Down -> (i,j+1) in
+              res := Fp.fp_or !res (Fp.fp_and (Fp.fp_variable var_array.(i).(j).(p)) (Fp.fp_variable var_array.(i').(j').(q)))
+          done
+        done;
+        !res 
+
+      method private create_fp_pairs () = 
+        let res = ref (Fp.fp_true()) in
+        for i = 0 to width-1 do
+          for j = 0 to height-1 do
+            if i<width-1 then
+              res := Fp.fp_and !res (self#create_fp_pair i j Right);
+            if j<height-1 then
+              res := Fp.fp_and !res (self#create_fp_pair i j Down);
+          done
+        done;
+        !res 
+
+      method private create_fp_one_case_per_piece_ k =
+        let l=ref[] in
+        for i = 0 to width-1 do
+          for j=0 to height-1 do
+            l:= !l @ [Fp.fp_variable var_array.(i).(j).(k)]
+          done
+        done;
+        or_concat (List.map (one_true_concat !l) index_list) 
+
+      method private create_fp_one_case_per_piece() =
+        and_concat (List.map self#create_fp_one_case_per_piece_ index_list) 
+
+      method private create_fp_one_piece_per_case_ i j =
+        or_concat (List.map (one_true_concat (List.map (fun x -> Fp.fp_variable var_array.(i).(j).(x)) index_list)) index_list) 
+
+      method private create_fp_one_piece_per_case () =
+        let l= ref [] in
+        for i = 0 to width-1 do
+          for j= 0 to height - 1 do
+            l:=!l @ [self#create_fp_one_piece_per_case_ i j]
+          done
+        done;
+        and_concat !l 
+
+      method create_fp () =
+        Fp.fp_and (self#create_fp_pairs()) ( Fp.fp_and (self#create_fp_one_case_per_piece()) (self#create_fp_one_piece_per_case())) 
+
+      method private write_solution file solution =
+        let file = "data/"^file in
+        let oc = open_out file in
+        Printf.fprintf oc "%d %d\n" width height;
+        let find i j l =
+          let rec find_ = function
+            | [] -> []
+            | hd::tl -> 
+              if hd.i = i && hd.j = j then 
+                let p = pieces.(hd.k) in
+                Printf.fprintf oc "%d %d %d %d\n" p.top p.bottom p.left p.right;
+                tl
+              else
+                hd :: find_ tl
+          in find_ l in
+        let l = ref solution in
+        for j = 0 to height - 1 do
+          for i = 0 to width - 1 do 
+            l := find i j !l
+          done
+        done;
+        close_out oc
+
+      method solve file =
+        let f_p = self#create_fp() in
+        let b = reduce_bdd (bdd_of_fp ~var_list:var_list f_p) in
+        print_endline (string_of_bdd b);
+        let has_solution,solution = one_solution b in
+        if has_solution then
+            self#write_solution file solution
+        else
+          raise NoSolution
+    end
   with End_of_file ->
     raise (BDDException "Invalid input data") 
 
-
-let resolve file = 
-
-  let ((width,height),pieces) = make_tetravex(file) in
-
-  let create_variables () =
-    let nil = Fp.create_var_false {i=0;j=0;k=0} in
-    let a' = Array.make_matrix width height nil in
-    let a = Array.map (Array.map (fun x -> Array.make (width*height) x)) a' in
-    for i = 0 to width-1 do
-      for j = 0 to height-1 do
-        for k = 0 to width*height-1 do
-          a.(i).(j).(k) <- (Fp.create_var_false {i=i;j=j;k=k})
-        done
-      done
-    done;
-    a in
-
-  let variables = create_variables() in
-
-  let var_list =
-    CS.Array.fold 
-      ~init:[] 
-      ~f:(fun l x -> 
-          l @ (CS.Array.fold 
-                 ~init:[] 
-                 ~f:(fun l y -> 
-                     l @ (Array.to_list y)) 
-                 x)) 
-      variables in
-
-  let valid_position k1 k2 rp =
-    match rp with
-    |Right -> pieces.(k1).right = pieces.(k2).left
-    |Down -> pieces.(k1).bottom = pieces.(k2).top in
-
-  let create_fp_pair i j rp =
-    let res = ref (Fp.fp_false()) in
-    for p = 0 to width*height-1 do
-      for q = 0 to width*height-1 do
-        if p<>q && valid_position p q rp then
-          let (i',j')=match rp with Right -> (i+1,j)|Down -> (i,j+1) in
-          res := Fp.fp_or !res (Fp.fp_and (Fp.fp_variable variables.(i).(j).(p)) (Fp.fp_variable variables.(i').(j').(q)))
-      done
-    done;
-    !res in
-
-  let create_fp_pairs () = 
-    let res = ref (Fp.fp_true()) in
-    for i = 0 to width-1 do
-      for j = 0 to height-1 do
-        if i<width-1 then
-          res := Fp.fp_and !res (create_fp_pair i j Right);
-        if j<height-1 then
-          res := Fp.fp_and !res (create_fp_pair i j Down);
-      done
-    done;
-    !res in
-
-  let index_list = List.mapi (fun i x -> i+x ) (Array.to_list (Array.make (width*height) 0)) in
-
-  let create_fp_one_case_per_piece_ k =
-    let l=ref[] in
-    for i = 0 to width-1 do
-      for j=0 to height-1 do
-        l:= !l @ [Fp.fp_variable variables.(i).(j).(k)]
-      done
-    done;
-    or_concat (List.map (one_true_concat !l) index_list) in
-
-  let create_fp_one_case_per_piece() =
-    and_concat (List.map create_fp_one_case_per_piece_ index_list) in
-
-  let create_fp_one_piece_per_case_ i j =
-    or_concat (List.map (one_true_concat (List.map (fun x -> Fp.fp_variable variables.(i).(j).(x)) index_list)) index_list) in
-
-  let create_fp_one_piece_per_case () =
-    let l= ref [] in
-    for i = 0 to width-1 do
-      for j= 0 to height - 1 do
-        l:=!l @ [create_fp_one_piece_per_case_ i j]
-      done
-    done;
-    and_concat !l in
-
-  let create_fp () =
-    Fp.fp_and (create_fp_pairs()) ( Fp.fp_and (create_fp_one_case_per_piece()) (create_fp_one_piece_per_case())) in
-
-  let n_var = List.length var_list in
-  let f_p = create_fp() in
-  let n = get_graph ~var_list:var_list f_p in
-  print_int (number_of_solution n n_var);
-  print_endline "";
-  print_endline (reduce_graph n);
-  print_factorized_fp (factorise ~var_list:var_list f_p)
+let solve file =
+  let ttx = make_tetravex file in
+  let strlist= String.split_on_char '/' file in
+  let filename = List.nth strlist ((List.length strlist) -1) in
+  let n = String.index filename '.' in
+  let filename = String.sub filename 0 n in
+  ttx#solve (filename ^ "_solution.txt")

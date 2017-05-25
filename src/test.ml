@@ -1,8 +1,8 @@
 open Bdd_API
 
 let test1 () = 
-    print_endline "Resolve a 2*2 tetravex problem";
-    tetravex "data/tetravex2.txt" 
+    print_endline "Solve a 3*3 tetravex problem";
+    tetravex "data/tetravex3.txt" 
 
 let test2 () = 
     print_endline "Construct a propositional expression from a standard input";
@@ -46,13 +46,13 @@ let test5() =
     print_endline (string_of_bool (is_satisfiable_s "(a<=>b)||(a<=>~b)"))
 
 let test6() = 
-    print_endline "Create a binary decision tree from a propositional expression : ";
+    print_endline "Create a binary decision diagram from a propositional expression : ";
     print_endline "The expression to transform : '(a&&~b)||c=>(d<=>e)' ";
     print_endline "Result : ";
     dump_s "(a&&~b)||c=>(d<=>e)"
 
 let test7() =
-    print_endline "Read a binary decision tree from a file : ";
+    print_endline "Read a binary decision diagram from a file : ";
     print_endline (string_of_bdd (bdd_from_file "data/bdd1.txt"))
 
 let test8() = 
@@ -62,5 +62,20 @@ let test8() =
     let (f_p, var_list) = fp_of_string "(a&&b)&&(~c||~d)&&~e" in
     print_factorized_fp (factorise ~var_list:var_list f_p )
 
-let () = test7()
+
+let () = 
+    let argv = Sys.argv in
+    if Array.length argv = 1 then test1()
+    else 
+    match int_of_string argv.(1) with
+    | 1 -> test1()
+    | 2 -> test2()
+    | 3 -> test3()
+    | 4 -> test4()
+    | 5 -> test5()
+    | 6 -> test6()
+    | 7 -> test7()
+    | 8 -> test8()
+    | _ -> raise (invalid_arg "you should input a number between 1 and 8")
+
     
