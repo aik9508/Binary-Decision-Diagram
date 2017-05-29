@@ -43,7 +43,7 @@ let test5() =
     print_endline "The expression to check : '(a<=>b)||(a<=>~b)'";
     print_endline "The expected result : true";
     print_string "The result computed : " ;
-    print_endline (string_of_bool (is_satisfiable_s "(a<=>b)||(a<=>~b)"))
+    print_endline (string_of_bool (is_valid_s "(a<=>b)||(a<=>~b)"))
 
 let test6() = 
     print_endline "Create a binary decision diagram from a propositional expression : ";
@@ -53,7 +53,7 @@ let test6() =
 
 let test7() =
     print_endline "Read a binary decision diagram from a file : ";
-    print_endline (string_of_bdd (bdd_from_file "data/bdd1.txt"))
+    print_endline (string_of_bdd (bdd_of_file "data/bdd1.txt"))
 
 let test8() = 
     print_endline "Factorise a propositional expression : ";

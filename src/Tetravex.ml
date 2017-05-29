@@ -1,6 +1,6 @@
 open Lt
 open Bdd_Main
-module CS = Core.Std
+module CS = Core
 
 type position = {i:int;j:int;k:int}
 type piece = {top:int ; left:int; bottom:int; right:int}
@@ -134,7 +134,8 @@ let make_tetravex (file:string) =
         and_concat (List.map self#create_fp_one_case_per_piece_ index_list) 
 
       method private create_fp_one_piece_per_case_ i j =
-        or_concat (List.map (one_true_concat (List.map (fun x -> Fp.fp_variable var_array.(i).(j).(x)) index_list)) index_list) 
+        (*or_concat (List.map (fun x -> Fp.fp_variable var_array.(i).(j).(x)) index_list)*)
+        or_concat (List.map (one_true_concat (List.map (fun x -> Fp.fp_variable var_array.(i).(j).(x)) index_list)) index_list)
 
       method private create_fp_one_piece_per_case () =
         let l= ref [] in
@@ -173,7 +174,8 @@ let make_tetravex (file:string) =
 
       method solve file =
         let f_p = self#create_fp() in
-        let b = reduce_bdd (bdd_of_fp ~var_list:var_list f_p) in
+        (*print_endline (Fp.string_of_fp f_p);*)
+        let b = bdd_of_fp ~var_list:var_list f_p in
         print_endline (string_of_bdd b);
         let has_solution,solution = one_solution b in
         if has_solution then

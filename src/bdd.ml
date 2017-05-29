@@ -2,19 +2,19 @@ open Fp
 open Bdd_Main
 open Tetravex
 
+module SB = Make_bdd(StrLabel)
+module SF = SB.Fp
+
 let tetravex filename =
   solve filename
 
 let dump s =
-  let module SB = Make_bdd(StrLabel) in
   SB.dump_s s 
 
 let is_satisfiable s =
-  let module SF = Make_Fp(StrLabel) in
   SF.is_satisfiable_s s
 
 let is_valid s =
-  let module SF = Make_Fp(StrLabel) in
   SF.is_valid_s s
 
 let test () =

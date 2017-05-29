@@ -18,14 +18,12 @@ module type Bdd = sig
   type bdd
   exception BDDException of string
   val bdd_of_fp : ?var_list: variable list -> fp -> bdd
+  val bdd_of_fp_l : t list -> fp -> bdd
   val factorise : ?var_list:variable list -> fp -> variable list * variable list * fp * variable list
   val print_factorized_fp : variable list * variable list * fp * variable list -> unit
-  val number_of_solution : bdd -> int -> int
-  val cons_from_file : string -> bdd
-  val fp_from_file : string -> fp
-  val fp_of_bdd : bdd -> fp
+  val number_of_solution : bdd -> int
+  val bdd_of_file : string -> bdd
   val string_of_bdd : bdd -> string
-  val reduce_bdd : bdd -> bdd
   val dump_s : string -> unit
   val dump_fp : ?var_list : variable list -> fp -> unit
   val one_solution : bdd -> bool * t list
@@ -39,7 +37,6 @@ struct
   type t = Elt.t
   type fp = Fp.fp
   type variable = Fp.variable
-  type bdd =T|F|Node of bdd * t * bdd
   exception BDDException of string
 
   module Index = struct
@@ -65,17 +62,14 @@ struct
     let next_false x = x.nf
     let label x = x.label
     let to_string x = String.concat " " [Elt.convert_to_string x.label; Index.to_string x.nt ; Index.to_string x.nf]
-    (*let to_std_data s = 
-      let l = String.split_on_char ' ' s in
-      match l with
-      | [label;nt;nf] -> {label=Elt.convert_to_t label; nt = Index.to_index nt ; nf= Index.to_index nf}
-      | _ -> raise (BDDException "Invalid input format")*)
     let std_data label nt nf = {label;nt;nf}
   end
   type data_piece = Standard_data.t
+  type bdd = Trivial of t list * bool | NonTrivial of t list * ((int, data_piece) Hashtbl.t)
 
-  let cons_htb_from_file (file:string) =
+  let bdd_of_file (file:string) =
     let h = Hashtbl.create 10 in
+    let label_list = ref [] in
     begin
       let ic = open_in file in
       try
@@ -85,7 +79,10 @@ struct
           let line_data =
             match line_data_str with
             |[key;label;next_true;next_false]-> 
-              (int_of_string key, Standard_data.std_data (Elt.convert_to_t label)
+              let lab = Elt.convert_to_t label in
+              if not (List.exists ( Elt.equal lab ) !label_list) then
+                label_list := !label_list @ [lab] ;
+              (int_of_string key, Standard_data.std_data lab
                  (Index.to_index next_true) 
                  (Index.to_index next_false))
             | _ -> raise (BDDException "Incorrect data format") in
@@ -94,90 +91,9 @@ struct
       with End_of_file ->
         close_in_noerr ic
     end;
-    h
-
-  let cons_bdd h =
-    let rec get_bdd ind = 
-      match ind with
-      | Index.DT -> T
-      | Index.DF -> F
-      | ind -> aux (Hashtbl.find h (Index.to_int ind)) 
-    and  aux dp =
-      let bdd_true = get_bdd (Standard_data.next_true dp) in
-      let bdd_false = get_bdd (Standard_data.next_false dp) in
-      Node (bdd_false , Standard_data.label dp , bdd_true) 
-    in aux (Hashtbl.find h 0)
-
-  let cons_from_file file =
-    cons_bdd (cons_htb_from_file file)
+    NonTrivial (!label_list, h)
 
   exception Unmatched_arguments
-
-  let bdd_of_fp_ (f_p:fp) (var_list:variable list) =
-    let rec aux f_p var_list =
-      (*Printf.printf "depth : %d \n" (List.length var_list);*)
-      if Fp.is_fp_true f_p then T else if Fp.is_fp_false f_p then F else
-        begin
-          match var_list with
-          |[] -> 
-            if Fp.is_fp_true f_p then T 
-            else if Fp.is_fp_false f_p then F 
-            else raise Unmatched_arguments
-          | hd :: tl -> 
-            begin
-              let var_pos = Fp.get_var_position f_p hd in
-              if Fp.bool_of_tree var_pos then
-                let leftFp = Fp.partial_eval f_p (Fp.var_false hd) var_pos in
-                let leftNode = aux leftFp tl in
-                let rightNode = aux (Fp.partial_eval f_p (Fp.var_true hd) var_pos) tl in
-                Node (leftNode , Fp.get_name hd, rightNode)
-              else
-                aux f_p tl
-            end
-        end
-    in aux f_p var_list
-
-  let bdd_of_fp ?(var_list=[]) f_p =
-    if var_list = [] then bdd_of_fp_ f_p (Fp.get_all_variables f_p)
-    else bdd_of_fp_ f_p var_list
-
-  let rec size_of_bdd n =
-    match n with
-    |T|F -> 1
-    |Node (leftNode,_,rightNode) -> (max (size_of_bdd leftNode) (size_of_bdd rightNode)) + 1 
-
-  let reduce_bdd_ b =
-    let module Ht = Hashtbl.Make(Standard_data) in
-    let data_to_index = Ht.create ((size_of_bdd b)*2) in
-    let l = ref [] in
-    let current_index = ref 0 in
-    let rec aux = function
-      | T -> Index.DT
-      | F -> Index.DF
-      | Node (leftNode,v,rightNode) -> 
-        let leftIndex = aux leftNode in
-        let rightIndex = aux rightNode in 
-        let data_p = Standard_data.std_data v rightIndex leftIndex in
-        if not(Ht.mem data_to_index data_p) then 
-          begin
-            if Index.equal leftIndex rightIndex then
-              if (leftIndex = Index.DT) || (leftIndex = Index.DF) then
-                leftIndex
-              else
-                begin
-                  Ht.add data_to_index data_p (Index.to_int leftIndex);
-                  leftIndex
-                end
-            else
-              begin
-                Ht.add data_to_index data_p !current_index;
-                l := data_p :: !l;
-                current_index:=!current_index+1;
-                Index.I (!current_index - 1)
-              end
-          end
-        else Index.I (Ht.find data_to_index data_p) 
-    in let r = aux b in r,!l
 
   let change_data_piece data_p max_index= 
     let change_index ind = if ind=Index.DT || ind=Index.DF  then ind else Index.I (max_index - Index.to_int ind) in
@@ -186,47 +102,78 @@ struct
       (change_index (Standard_data.next_true data_p))
       (change_index (Standard_data.next_false data_p))
 
-  let reduce_bdd b =
-    let r,l = reduce_bdd_ b in
-    match r with
-    | Index.DT -> T
-    | Index.DF -> F
-    | _ ->
-      let h = Hashtbl.create 10 in
-      match l with
-      | l ->
+  let bdd_of_fp_ (f_p:fp) (var_list:variable list) =
+    let module Sd = Standard_data in
+    let module Ht = Hashtbl.Make(Standard_data) in
+    let h = Ht.create 20 in
+    let current_index = ref 0 in
+    let data_list = ref [] in
+    let rec aux f_p var_list = 
+      match var_list with
+      |[] -> 
+        if Fp.is_fp_true f_p then Index.DT
+        else if Fp.is_fp_false f_p then Index.DF 
+        else raise Unmatched_arguments
+      | s :: l ->
         begin
-          let max_index = (List.length l) - 1 in 
-          List.iteri (fun i data_p -> Hashtbl.add h i (change_data_piece data_p max_index)) l
-        end;
-        cons_bdd h
-
-  let string_of_bdd b =
-    let r,l = reduce_bdd_ b in
-    match r with
-    | Index.DT -> "true"
-    | Index.DF -> "false"
-    | _ ->
-      match l with
-      |[] -> ""
-      | l ->
-        begin
-          let max_index = (List.length l) - 1 in 
-          String.concat "\n" (
-            List.mapi (fun i data_p -> (string_of_int i) ^ " " ^ Standard_data.to_string (change_data_piece data_p max_index)) l
-          )
+          let var_pos = Fp.get_var_position f_p s in
+          if Fp.bool_of_tree var_pos then
+            let leftFp = Fp.partial_eval f_p (Fp.var_false s) var_pos in
+            let false_index = aux leftFp l in
+            let rightFp = Fp.partial_eval f_p (Fp.var_true s) var_pos in
+            let true_index = aux rightFp l in
+            let data_p = Sd.std_data (Fp.get_name s) true_index false_index in
+            if not (Ht.mem h data_p) then
+              begin
+                if Index.equal true_index false_index then true_index
+                else
+                  begin
+                    Ht.add h data_p !current_index;
+                    data_list := data_p :: !data_list;
+                    current_index:=!current_index +1;
+                    Index.I (!current_index -1)
+                  end
+              end
+            else
+              Index.I (Ht.find h data_p) 
+          else
+            aux f_p l
         end
+    in match aux f_p var_list with
+    | Index.DT -> Trivial (List.map Fp.get_name var_list, true)
+    | Index.DF -> Trivial (List.map Fp.get_name var_list, false)
+    | _ -> 
+      let max_index=List.length !data_list - 1 in
+      let htl = Hashtbl.create (List.length !data_list) in
+      List.iteri (fun i data_p -> Hashtbl.add htl i (change_data_piece data_p max_index)) !data_list;
+      NonTrivial (List.map Fp.get_name var_list,htl)
+
+  let bdd_of_fp ?(var_list=[]) f_p =
+    if var_list = [] then bdd_of_fp_ f_p (Fp.get_all_variables f_p)
+    else bdd_of_fp_ f_p var_list
+
+  let bdd_of_fp_l v_list f_p =
+    bdd_of_fp_ f_p (List.map Fp.create_var_false v_list)
+
+  let string_of_bdd = function
+    | Trivial (_, true) -> "true"
+    | Trivial (_, false) -> "false"
+    | NonTrivial (_, h) ->
+      let rec aux ind l =
+        if Hashtbl.mem h ind then 
+          aux (ind+1) (l @ [Hashtbl.find h ind])
+        else
+          String.concat "\n" (
+            List.mapi (fun i data_p -> (string_of_int i) ^ " " ^ Standard_data.to_string data_p) l
+          )
+      in aux 0 []
 
   let factorise_ f_p var_list=
     let module Sd = Standard_data in
-    let r,l = reduce_bdd_ (bdd_of_fp_ f_p var_list) in
-    match r with
-    | Index.DT -> ([],[],Fp.fp_true(),[])
-    | Index.DF -> ([],[],Fp.fp_false(),[])
-    | _ ->
-      let a = Array.make (List.length l) (List.hd l) in
-      let max_index = (List.length l) - 1 in
-      List.iteri (fun i x -> a.(i) <- (change_data_piece x max_index)) l ;
+    match bdd_of_fp_ f_p var_list with
+    | Trivial (_, true) -> ([],[],Fp.fp_true(),[])
+    | Trivial (_, false) -> ([],[],Fp.fp_false(),[])
+    | NonTrivial (_,h) ->
       let rec aux data_p = 
         let v = Fp.fp_variable (Fp.create_var_false (Sd.label data_p)) in
         let fp_right = get_data_p (Sd.next_true data_p) in
@@ -235,8 +182,8 @@ struct
       and get_data_p = function
         |Index.DT -> Fp.fp_true()
         |Index.DF -> Fp.fp_false()
-        |Index.I i -> aux a.(i) in
-      match Fp.factorise ~var_list:var_list (aux a.(0))  with
+        |Index.I i -> aux (Hashtbl.find h i) in
+      match Fp.factorise ~var_list:var_list (aux (Hashtbl.find h 0))  with
         (t_list,f_list,r_fp) ->
         let new_var_list = 
           let nl = ref [] in
@@ -265,51 +212,43 @@ struct
         string_of_bdd (bdd_of_fp_ r_fp new_var_list)
       ])
 
-  let number_of_solution g height =
-    let rec aux n i =
-      match n with 
-      |T -> 1 lsl (height-i)
-      |F -> 0 
-      |Node (leftNode,_,rightNode) -> (aux leftNode (i+1)) + (aux rightNode (i+1)) 
-    in aux g 0
+  let number_of_solution = function
+    | Trivial (l,true) -> 1 lsl (List.length l)
+    | Trivial (_,false) -> 0
+    | NonTrivial (l,h) ->
+      let len = List.length l in
+      let module Sd = Standard_data in
+      let rec aux data_p i = 
+        let true_index = Sd.next_true data_p in
+        let false_index= Sd.next_false data_p in
+        nb_solution true_index i + nb_solution false_index i
+      and nb_solution ind i =
+        match ind  with
+        | Index.DT -> 1 lsl (len - i)
+        | Index.DF -> 0
+        | Index.I x -> aux (Hashtbl.find h x) i+1
+      in aux (Hashtbl.find h 0) 0
 
-  let fp_from_file file =
-    let h = cons_htb_from_file file in
-    let rec get_fp = function
-      | Index.DT -> Fp.fp_true()
-      | Index.DF -> Fp.fp_false()
-      | ind -> aux (Hashtbl.find h (Index.to_int ind))
-    and aux dp =
-      let fp1 = get_fp (Standard_data.next_true dp) in
-      let fp2 = get_fp (Standard_data.next_false dp) in
-      let var = Fp.fp_variable (Fp.create_var_false (Standard_data.label dp)) in
-      Fp.fp_or (Fp.fp_and var fp1) (Fp.fp_and (Fp.fp_not var) fp2) in
-    aux (Hashtbl.find h 0)
-
-  let fp_of_bdd g =
-    let rec aux = function
-      | T -> Fp.fp_true()
-      | F -> Fp.fp_false()
-      | Node (n1,v,n2) ->
-        let var = Fp.fp_variable (Fp.create_var_false v) in
-        Fp.fp_or (Fp.fp_and var (aux n2)) (Fp.fp_and (Fp.fp_not var) (aux n1)) in
-    aux g
-
-  let one_solution b =
-    let tlist = ref [] in
-    let rec aux = function
-      | T -> true
-      | F -> false
-      | Node (b1,v,b2) ->
-        if aux b1 then true
-        else if aux b2 then 
-          begin tlist:=v::!tlist; true end
-        else false 
-    in aux b , !tlist
-
-  let is_satisfiable b = b <> F
-
-  let is_valid b = b = T
+  let one_solution = function
+    | Trivial (_,b) -> b,[]
+    | NonTrivial (_,h) ->
+      let tlist = ref [] in
+      let module Sd = Standard_data in
+      let rec aux data_p = 
+        let true_index = Sd.next_true data_p in
+        if has_solution true_index then 
+          begin 
+            tlist:=Sd.label data_p::!tlist; 
+            true 
+          end
+        else let false_index= Sd.next_false data_p in
+          has_solution false_index
+      and has_solution ind  =
+        match ind  with
+        | Index.DT -> true
+        | Index.DF -> false
+        | Index.I x -> aux (Hashtbl.find h x) 
+      in aux (Hashtbl.find h 0),!tlist
 
   let dump_ f_p var_list = print_endline (string_of_bdd (bdd_of_fp_ f_p var_list))
 
@@ -319,4 +258,11 @@ struct
 
   let dump_s s = 
     let (f_p,var_list)= Fp.fp_of_string s in dump_ f_p var_list
+
+  let is_satisfiable = function
+    |Trivial (_,false) -> false
+    | _ -> true 
+  let is_valid = function
+    |Trivial (_,true) -> true
+    | _ -> false
 end
