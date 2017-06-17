@@ -40,12 +40,12 @@ struct
   exception BDDException of string
 
   module Index = struct
-    type t = I of int | DT | DF
-    let hash x = match x with I i -> Hashtbl.hash i | DT -> -1 | DF -> -3
-    let equal x y = match x,y with (DT,DT)|(DF,DF) -> true | (I i1, I i2)-> i1=i2 | _ ->false 
-    let to_string x = match x with I i -> string_of_int i| DT -> "@t"| DF -> "@f"
-    let to_index s = match s with "@t" -> DT | "@f"-> DF | s -> I (int_of_string s)
-    let to_int x = match x with I i -> i | DT -> -1 | DF -> -3
+    type t = I of int | T | F
+    let hash x = match x with I i -> Hashtbl.hash i | T -> -1 | F -> -3
+    let equal x y = match x,y with (T,T)|(F,F) -> true | (I i1, I i2)-> i1=i2 | _ ->false 
+    let to_string x = match x with I i -> string_of_int i| T -> "@t"| F -> "@f"
+    let to_index s = match s with "@t" -> T | "@f"-> F | s -> I (int_of_string s)
+    let to_int x = match x with I i -> i | T -> -1 | F -> -3
   end
   type index = Index.t
 
@@ -96,7 +96,7 @@ struct
   exception Unmatched_arguments
 
   let change_data_piece data_p max_index= 
-    let change_index ind = if ind=Index.DT || ind=Index.DF  then ind else Index.I (max_index - Index.to_int ind) in
+    let change_index ind = if ind=Index.T || ind=Index.F  then ind else Index.I (max_index - Index.to_int ind) in
     Standard_data.std_data 
       (Standard_data.label data_p) 
       (change_index (Standard_data.next_true data_p))
@@ -111,8 +111,8 @@ struct
     let rec aux f_p var_list = 
       match var_list with
       |[] -> 
-        if Fp.is_fp_true f_p then Index.DT
-        else if Fp.is_fp_false f_p then Index.DF 
+        if Fp.is_fp_true f_p then Index.T
+        else if Fp.is_fp_false f_p then Index.F 
         else raise Unmatched_arguments
       | s :: l ->
         begin
@@ -140,8 +140,8 @@ struct
             aux f_p l
         end
     in match aux f_p var_list with
-    | Index.DT -> Trivial (List.map Fp.get_name var_list, true)
-    | Index.DF -> Trivial (List.map Fp.get_name var_list, false)
+    | Index.T -> Trivial (List.map Fp.get_name var_list, true)
+    | Index.F -> Trivial (List.map Fp.get_name var_list, false)
     | _ -> 
       let max_index=List.length !data_list - 1 in
       let htl = Hashtbl.create (List.length !data_list) in
@@ -180,8 +180,8 @@ struct
         let fp_left = get_data_p (Sd.next_false data_p) in 
         Fp.fp_or (Fp.fp_and (Fp.fp_not v) fp_left) (Fp.fp_and v fp_right)
       and get_data_p = function
-        |Index.DT -> Fp.fp_true()
-        |Index.DF -> Fp.fp_false()
+        |Index.T -> Fp.fp_true()
+        |Index.F -> Fp.fp_false()
         |Index.I i -> aux (Hashtbl.find h i) in
       match Fp.factorise ~var_list:var_list (aux (Hashtbl.find h 0))  with
         (t_list,f_list,r_fp) ->
@@ -224,8 +224,8 @@ struct
         nb_solution true_index i + nb_solution false_index i
       and nb_solution ind i =
         match ind  with
-        | Index.DT -> 1 lsl (len - i)
-        | Index.DF -> 0
+        | Index.T -> 1 lsl (len - i)
+        | Index.F -> 0
         | Index.I x -> aux (Hashtbl.find h x) i+1
       in aux (Hashtbl.find h 0) 0
 
@@ -245,8 +245,8 @@ struct
           has_solution false_index
       and has_solution ind  =
         match ind  with
-        | Index.DT -> true
-        | Index.DF -> false
+        | Index.T -> true
+        | Index.F -> false
         | Index.I x -> aux (Hashtbl.find h x) 
       in aux (Hashtbl.find h 0),!tlist
 

@@ -3,7 +3,7 @@ CB = corebuild $(CB_FLAGS)
 
 all: bdd test
 
-native: 
+bdd: 
 	$(CB) bdd.native
 
 clean: 
@@ -12,7 +12,4 @@ clean:
 test:
 	$(CB) test.native
 
-bdd: native
-	./bdd.native satisfiable "a&&~a"
-
-.PHONY: all clean native bdd
+.PHONY: all clean bdd

@@ -1,6 +1,6 @@
 open Lt
 open Bdd_Main
-module CS = Core
+module CS = Core.Std
 
 type position = {i:int;j:int;k:int}
 type piece = {top:int ; left:int; bottom:int; right:int}

@@ -1,4 +1,4 @@
-module CS = Core
+module CS = Core.Std
 open Lt
 
 module type FormulePropositionnelle =
