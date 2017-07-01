@@ -10,6 +10,7 @@ Vous pouvez tester nos programmes comme ceci :
 3.Faites des tests en utilisant les commandes ./bdd.native dump,./bdd.native valid, ./bdd.native satisfiable, ./bdd.native tetravex. Vous pouvez utiliser true, false, ∼,&&,||,=>et<=> pour représenter resp.⊤,⊥,¬,∧,∨,⇒,⇔. La commande ./bdd.native tetravex doit être suivie par un nom de fichier, par exemple a.txt. Alors la solution du puzzle sera stockée dans a_solution.txt qui se trouve dans le répertoire data.
 
 Exemples :
+
 (1) ./bdd.native dump "(a&&b=>∼c)||false" : transforme une formule propositionnelle en un diagramme de décision binaire
 
 (2) ./bdd.native satisfiable "a&&∼a" : vérifier si une formule propositionnelle est satisfaisante
