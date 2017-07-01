@@ -11,7 +11,9 @@ Vous pouvez tester nos programmes comme ceci :
 
 Exemples :
 (1) ./bdd.native dump "(a&&b=>∼c)||false" : transforme une formule propositionnelle en un diagramme de décision binaire
+
 (2) ./bdd.native satisfiable "a&&∼a" : vérifier si une formule propositionnelle est satisfaisante
+
 (3) ./bdd.native tetravex "data/tetravex3.txt" : résoudre un puzzle de tetravex
 
 4.On fournit aussi quelques tests dans test.ml. Vous pouvez exercer ces fonctions de test en utilisant la commande ./test.native n, où n est un entier entre 1 et 8.
